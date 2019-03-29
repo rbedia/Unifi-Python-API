@@ -1,0 +1,85 @@
+#!/usr/bin/env python
+#
+# check_unifi_clients - Nagios plugin to check Unifi connected clients
+#
+
+import argparse
+import sys
+
+import requests
+
+from ubiquiti.unifi import API as Unifi_API
+
+"""Nagios plugin to check UniFi for the number of connected clients."""
+
+__title__ = "check_unifi_clients"
+__version__ = "1.0.0"
+
+# Standard Nagios return codes
+OK = 0
+WARNING = 1
+CRITICAL = 2
+UNKNOWN = 3
+nagiosprefixes = {
+    OK: "OK",
+    WARNING: "WARNING",
+    CRITICAL: "CRITICAL",
+    UNKNOWN: "UNKNOWN"
+}
+
+requests.packages.urllib3.disable_warnings()
+
+# Get the arguments
+parser = argparse.ArgumentParser()
+parser.add_argument(
+    '-H', '--hostname', default='unifi',
+    help='the controller address (default "unifi")')
+parser.add_argument(
+    '-u', '--username', default='admin',
+    help='the controller username (default("admin")')
+parser.add_argument(
+    '-p', '--password', default='',
+    help='the controller password')
+parser.add_argument(
+    '-b', '--port', default='8443',
+    help='the controller port (default "8443")')
+parser.add_argument(
+    '-v', '--version', default='v2',
+    help='the controller base version (default "v2")')
+parser.add_argument(
+    '-s', '--siteid', default='default',
+    help='the site ID, UniFi >=3.x only (default "default")')
+parser.add_argument(
+    '-w', '--warning', default='',
+    help='amount of clients online for WARNING (default: none)')
+parser.add_argument(
+    '-c', '--critical', default='',
+    help='amount of clients online for CRITICAL (default: none)')
+parser.add_argument(
+    '-i', '--ssid', default='',
+    help='name of SSID to monitor')
+args = parser.parse_args()
+
+try:
+    baseurl = "https://{}:{}".format(args.hostname, args.port)
+    api = Unifi_API(username=args.username, password=args.password,
+                    site=args.siteid, baseurl=baseurl, verify_ssl=False)
+    api.login()
+except Exception as e:
+    print("UNKNOWN: Error connecting to UniFi Controller (%s) | Users=0" % e)
+    sys.exit(UNKNOWN)
+
+ssid = args.ssid
+clients = api.list_clients({'essid': ssid})
+client_count = len(clients)
+message_code = OK
+
+if args.critical != '' and client_count <= int(args.critical):
+    message_code = CRITICAL
+if (message_code == OK and args.warning != ''
+        and client_count <= int(args.warning)):
+    message_code = WARNING
+
+print("%s: Users on %s: %d | Users=%d"
+      % (nagiosprefixes[message_code], ssid, client_count, client_count))
+sys.exit(message_code)
